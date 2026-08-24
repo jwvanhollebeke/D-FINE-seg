@@ -7,14 +7,14 @@ shift mask boundaries — and silently degrade mask mAP.
 
 import numpy as np
 
-from src.dl.utils import (
+from dfine_seg.dl.utils import (
     clip_polygon_to_rect,
     norm_poly_to_abs,
     poly_abs_to_mask,
     resample_segments,
     segment2box,
 )
-from src.etl.polys2bbox import polygon_to_bbox
+from dfine_seg.etl.polys2bbox import polygon_to_bbox
 
 
 def test_norm_poly_to_abs_basic():
@@ -34,6 +34,34 @@ def test_poly_abs_to_mask_full_image_filled():
     assert mask.shape == (50, 50)
     # Allow a small boundary tolerance: at minimum the interior should be filled.
     assert mask[1:48, 1:48].all()
+
+
+def _square(x, y, side):
+    return np.array([[x, y], [x + side, y], [x + side, y + side], [x, y + side]], dtype=np.float32)
+
+
+def test_poly_abs_to_mask_fills_every_part():
+    """One instance split into islands: all of them must land in its mask."""
+    parts = [_square(2, 2, 10), _square(30, 30, 10), _square(2, 30, 10)]
+    mask = poly_abs_to_mask(parts, h=50, w=50)
+    for p in parts:
+        x, y = p[0]
+        assert mask[int(y) + 5, int(x) + 5] == 1
+
+
+def test_poly_abs_to_mask_parts_union_not_even_odd():
+    """Nested parts must OR together (pycocotools semantics), not punch a hole.
+
+    A single multi-contour cv2.fillPoly call would apply the even-odd rule here.
+    """
+    mask = poly_abs_to_mask([_square(0, 0, 40), _square(10, 10, 20)], h=50, w=50)
+    assert mask[20, 20] == 1
+
+
+def test_poly_abs_to_mask_accepts_bare_array_and_empty_list():
+    bare = poly_abs_to_mask(_square(0, 0, 20), h=30, w=30)
+    assert bare[5, 5] == 1
+    assert poly_abs_to_mask([], h=30, w=30).sum() == 0
 
 
 def test_clip_polygon_to_rect_keeps_inside():
